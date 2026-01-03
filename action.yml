@@ -1,0 +1,223 @@
+name: 'LLM Council Quality Gate'
+description: 'Multi-model consensus verification for AI-generated code and content'
+author: 'Amiable'
+
+branding:
+  icon: 'check-circle'
+  color: 'green'
+
+inputs:
+  command:
+    description: 'Command to run: gate, verify, or review'
+    required: false
+    default: 'gate'
+  snapshot:
+    description: 'Git snapshot/SHA to verify'
+    required: false
+    default: ${{ github.sha }}
+  file-paths:
+    description: 'Specific file paths to verify (space-separated)'
+    required: false
+  confidence-threshold:
+    description: 'Minimum confidence score to pass (0.0-1.0)'
+    required: false
+    default: '0.8'
+  rubric-focus:
+    description: 'Focus area for evaluation: Security, Performance, Testing, or General'
+    required: false
+    default: 'General'
+  version:
+    description: 'llm-council-core version to install (default: latest stable)'
+    required: false
+    default: '0.24.5'
+  python-version:
+    description: 'Python version to use'
+    required: false
+    default: '3.11'
+  fail-on-unclear:
+    description: 'Fail the action when verdict is UNCLEAR (exit code 2)'
+    required: false
+    default: 'false'
+
+outputs:
+  verdict:
+    description: 'Verdict: PASS, FAIL, or UNCLEAR'
+    value: ${{ steps.gate.outputs.verdict }}
+  exit-code:
+    description: 'Exit code: 0=PASS, 1=FAIL, 2=UNCLEAR'
+    value: ${{ steps.gate.outputs.exit_code }}
+  confidence:
+    description: 'Aggregate confidence score (0.0-1.0)'
+    value: ${{ steps.gate.outputs.confidence }}
+  summary:
+    description: 'Human-readable summary of evaluation'
+    value: ${{ steps.gate.outputs.summary }}
+  transcript-path:
+    description: 'Path to verification transcript (if generated)'
+    value: ${{ steps.gate.outputs.transcript_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      id: cache-pip
+      with:
+        path: ~/.cache/pip
+        key: llm-council-${{ inputs.version }}-${{ runner.os }}-py${{ inputs.python-version }}
+        restore-keys: |
+          llm-council-${{ inputs.version }}-${{ runner.os }}-
+          llm-council-
+
+    - name: Install llm-council-core
+      shell: bash
+      run: |
+        echo "::group::Installing llm-council-core"
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          pip install --quiet llm-council-core
+        else
+          pip install --quiet "llm-council-core==${{ inputs.version }}"
+        fi
+        echo "Installed version: $(llm-council --version)"
+        echo "::endgroup::"
+
+    - name: Run LLM Council
+      id: gate
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
+        OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+        ANTHROPIC_API_KEY: ${{ env.ANTHROPIC_API_KEY }}
+      run: |
+        set +e  # Don't exit on error - we handle exit codes
+
+        # Build command
+        CMD="llm-council ${{ inputs.command }}"
+        CMD="$CMD --snapshot ${{ inputs.snapshot }}"
+        CMD="$CMD --confidence-threshold ${{ inputs.confidence-threshold }}"
+
+        if [ -n "${{ inputs.file-paths }}" ]; then
+          CMD="$CMD --file-paths ${{ inputs.file-paths }}"
+        fi
+
+        if [ "${{ inputs.rubric-focus }}" != "General" ]; then
+          CMD="$CMD --rubric-focus ${{ inputs.rubric-focus }}"
+        fi
+
+        echo "::group::Running: $CMD"
+
+        # Capture output
+        OUTPUT=$(mktemp)
+        $CMD 2>&1 | tee "$OUTPUT"
+        EXIT_CODE=${PIPESTATUS[0]}
+
+        echo "::endgroup::"
+
+        # Map exit code to verdict
+        case $EXIT_CODE in
+          0) VERDICT="PASS" ;;
+          1) VERDICT="FAIL" ;;
+          2) VERDICT="UNCLEAR" ;;
+          *) VERDICT="ERROR" ;;
+        esac
+
+        # Extract confidence from output (if present)
+        CONFIDENCE=$(grep -oP 'confidence[:\s]+\K[0-9.]+' "$OUTPUT" | head -1 || echo "N/A")
+
+        # Set outputs
+        echo "verdict=$VERDICT" >> $GITHUB_OUTPUT
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        echo "confidence=$CONFIDENCE" >> $GITHUB_OUTPUT
+
+        # Multi-line summary
+        {
+          echo 'summary<<EOF'
+          cat "$OUTPUT"
+          echo 'EOF'
+        } >> $GITHUB_OUTPUT
+
+        # Check for transcript path
+        TRANSCRIPT=$(grep -oP 'transcript[:\s]+\K[^\s]+' "$OUTPUT" | head -1 || echo "")
+        echo "transcript_path=$TRANSCRIPT" >> $GITHUB_OUTPUT
+
+        # Store for step summary
+        echo "$VERDICT" > /tmp/council_verdict
+        echo "$CONFIDENCE" > /tmp/council_confidence
+        cat "$OUTPUT" > /tmp/council_output
+
+        rm "$OUTPUT"
+
+    - name: Generate Step Summary
+      if: always()
+      shell: bash
+      run: |
+        VERDICT=$(cat /tmp/council_verdict 2>/dev/null || echo "UNKNOWN")
+        CONFIDENCE=$(cat /tmp/council_confidence 2>/dev/null || echo "N/A")
+
+        # Emoji based on verdict
+        case $VERDICT in
+          PASS) EMOJI="✅" ;;
+          FAIL) EMOJI="❌" ;;
+          UNCLEAR) EMOJI="⚠️" ;;
+          *) EMOJI="❓" ;;
+        esac
+
+        cat >> $GITHUB_STEP_SUMMARY << EOF
+        ## $EMOJI LLM Council Quality Gate: $VERDICT
+
+        | Metric | Value |
+        |--------|-------|
+        | **Verdict** | $VERDICT |
+        | **Confidence** | $CONFIDENCE |
+        | **Threshold** | ${{ inputs.confidence-threshold }} |
+        | **Snapshot** | \`${{ inputs.snapshot }}\` |
+        | **Focus** | ${{ inputs.rubric-focus }} |
+
+        <details>
+        <summary>Full Output</summary>
+
+        \`\`\`
+        $(cat /tmp/council_output 2>/dev/null || echo "No output captured")
+        \`\`\`
+
+        </details>
+
+        ---
+        *Evaluated by [LLM Council](https://github.com/amiable-dev/llm-council) v${{ inputs.version }}*
+        EOF
+
+    - name: Handle Exit Code
+      if: always()
+      shell: bash
+      run: |
+        EXIT_CODE=${{ steps.gate.outputs.exit_code }}
+        VERDICT=${{ steps.gate.outputs.verdict }}
+
+        case $EXIT_CODE in
+          0)
+            echo "::notice::LLM Council quality gate PASSED"
+            exit 0
+            ;;
+          1)
+            echo "::error::LLM Council quality gate FAILED"
+            exit 1
+            ;;
+          2)
+            if [ "${{ inputs.fail-on-unclear }}" = "true" ]; then
+              echo "::error::LLM Council verdict UNCLEAR (fail-on-unclear enabled)"
+              exit 1
+            else
+              echo "::warning::LLM Council verdict UNCLEAR - manual review recommended"
+              exit 0
+            fi
+            ;;
+          *)
+            echo "::error::LLM Council encountered an error (exit code: $EXIT_CODE)"
+            exit 1
+            ;;
+        esac
