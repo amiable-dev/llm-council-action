@@ -79,9 +79,9 @@ runs:
       run: |
         echo "::group::Installing llm-council-core"
         if [ "${{ inputs.version }}" = "latest" ]; then
-          pip install --quiet llm-council-core
+          pip install --quiet 'llm-council-core[http]'
         else
-          pip install --quiet "llm-council-core==${{ inputs.version }}"
+          pip install --quiet "llm-council-core[http]==${{ inputs.version }}"
         fi
         echo "Installed version: $(llm-council --version)"
         echo "::endgroup::"
