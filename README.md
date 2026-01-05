@@ -139,6 +139,86 @@ The action supports multiple LLM providers via environment variables:
 
 **Recommended**: Use OpenRouter for access to multiple models with a single API key.
 
+## Setup Guide
+
+### Step 1: Get an API Key
+
+1. Sign up at [OpenRouter](https://openrouter.ai/) (recommended) or your preferred provider
+2. Create an API key from the dashboard
+3. Note the key for the next step
+
+### Step 2: Add Secret to Your Repository
+
+**Via GitHub UI:**
+
+1. Go to your repository → **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret**
+3. Name: `OPENROUTER_API_KEY`
+4. Value: Your API key from Step 1
+5. Click **Add secret**
+
+**Via GitHub CLI:**
+
+```bash
+gh secret set OPENROUTER_API_KEY --repo your-org/your-repo
+# Paste your API key when prompted
+```
+
+### Step 3: Add Workflow
+
+Create `.github/workflows/council-gate.yml`:
+
+```yaml
+name: Council Quality Gate
+on: [pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: amiable-dev/llm-council-action@v1
+        with:
+          snapshot: ${{ github.sha }}
+          confidence-threshold: 0.8
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+```
+
+### For Maintainers: Version Sync Setup
+
+If you're maintaining a fork or want automatic version sync between `llm-council` and this action:
+
+1. **Create a Personal Access Token (PAT)**
+   - Go to https://github.com/settings/tokens
+   - Click "Generate new token (classic)"
+   - Name: `llm-council-action-sync`
+   - Scopes: `repo` (full control)
+   - Expiration: 90 days (or your preference)
+
+2. **Add PAT to llm-council repo**
+   ```bash
+   gh secret set ACTION_REPO_PAT --repo your-org/llm-council
+   # Paste the PAT when prompted
+   ```
+
+3. **How it works**
+   - When a new version is released to PyPI, `sync-action.yml` triggers
+   - It updates the default version in `action.yml`
+   - It moves the `v1` tag to the latest commit
+
+**Manual sync** (if not using ACTION_REPO_PAT):
+
+```bash
+# In llm-council-action repo
+VERSION="0.24.6"  # New version
+sed -i "s/default: '[0-9.]*'/default: '$VERSION'/" action.yml
+git commit -am "chore: sync with llm-council-core v$VERSION"
+git push origin main
+git tag -f v1 && git push -f origin v1
+```
+
 ## Step Summary
 
 The action automatically generates a GitHub Step Summary with:
