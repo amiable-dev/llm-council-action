@@ -190,12 +190,17 @@ jobs:
 
 If you're maintaining a fork or want automatic version sync between `llm-council` and this action:
 
-1. **Create a Personal Access Token (PAT)**
-   - Go to https://github.com/settings/tokens
-   - Click "Generate new token (classic)"
-   - Name: `llm-council-action-sync`
-   - Scopes: `repo` (full control)
-   - Expiration: 90 days (or your preference)
+1. **Create a Fine-Grained PAT** (least privilege)
+   - Go to https://github.com/settings/personal-access-tokens/new
+   - **Token name**: `llm-council-action-sync`
+   - **Expiration**: 90 days (or your preference)
+   - **Repository access**: "Only select repositories" → select `llm-council-action`
+   - **Permissions**:
+     - **Contents**: Read and write (required for pushing commits and tags)
+     - **Metadata**: Read (auto-selected)
+   - Click "Generate token"
+
+   *Alternative: Classic PAT with `public_repo` scope only (not full `repo`)*
 
 2. **Add PAT to llm-council repo**
    ```bash
