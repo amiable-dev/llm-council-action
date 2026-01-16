@@ -29,7 +29,7 @@ inputs:
   version:
     description: 'llm-council-core version to install (default: latest stable)'
     required: false
-    default: '0.24.17'
+    default: '0.24.18'
   python-version:
     description: 'Python version to use'
     required: false
