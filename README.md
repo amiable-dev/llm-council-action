@@ -42,7 +42,7 @@ jobs:
 | `file-paths` | Specific files to verify (space-separated) | No | - |
 | `confidence-threshold` | Minimum confidence to pass (0.0-1.0) | No | `0.8` |
 | `rubric-focus` | Focus: `Security`, `Performance`, `Testing`, `General` | No | `General` |
-| `version` | llm-council-core version | No | `0.24.5` |
+| `version` | llm-council-core version | No | `0.41.1` |
 | `python-version` | Python version | No | `3.11` |
 | `fail-on-unclear` | Fail when verdict is UNCLEAR | No | `false` |
 
